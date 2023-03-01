@@ -97,3 +97,34 @@ with ThreadPoolExecutor() as e:
 print(f'{counter.count=:,}') # 1,602,716
 ```
 上記を実行すると、処理完了後のカウンタの値が2,000,000になっていないことがわかる。この原因となっているコードは、インクリメントを行っている"self.count = self.cont + 1"の1行である。コードは1行であるが、その裏では「現在の値を読み取る」「1を足す」「結果を代入する」の一連の処理が行われている。この一連の処理の途中でスレッドが切り替わってしまうと、インスタンス変数self.countに2つのスレッドが同時にアクセスする状況が発生し、不整合な状態が生じる。
+
+### スレッドセーフな実装
+上記問題を解決するために、スレッドセーフなカウンタを実装する。ここでは、threading.Lockオブジェクトを使い、ロックによる排他制御を取り入れる。ロックによる排他制御の仕組みはシンプルで、ロックを獲得したスレッドのみが処理を実行できる。あるスレッドがロックを獲得している場合、そのロックが解放されるまでは、他のスレッドによるロックの獲得はブロックされる。したがって、排他制御を行いたい箇所でロックを獲得し、処理が終わったら速やかにロックを解放する。ロックの解放漏れを防ぐためにも、Lockオブジェクトはwith文とともに使うのが良い。
+
+```python
+from concurrent.futures import (ThreadPoolExecutor, wait)
+import threading
+
+class ThreadSafeCounter:
+    lock = threading.Lock()
+    def __init__(self):
+        self.count = 0
+    def increment(self):
+        with self.lock:
+            # 制御したい一連の処理をこのブロック内に書く
+            self.count = self.count + 1
+
+def count_up(counter):
+    for _ in range(1000000):
+        counter.increment()
+
+counter = ThreadSafeCounter()
+threads = 2
+with ThreadPoolExecutor() as e:
+    futures = [e.submit(count_up, counter) for _ in range(threads)]
+    done, not_done = wait(futures)
+
+print(f'{counter.count=:,}') # 2,000,000
+```
+
+上記コードは、「現在の値を読み取る」「1を足す」「結果を代入する」の一連の処理に対して排他制御を導入したものである。したがって、このコードはスレッドセーフな実装になっており、カウンタの値は期待通りの2,000,000になる。
