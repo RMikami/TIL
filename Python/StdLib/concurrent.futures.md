@@ -128,3 +128,115 @@ print(f'{counter.count=:,}') # 2,000,000
 ```
 
 上記コードは、「現在の値を読み取る」「1を足す」「結果を代入する」の一連の処理に対して排他制御を導入したものである。したがって、このコードはスレッドセーフな実装になっており、カウンタの値は期待通りの2,000,000になる。
+
+# ProcessPoolExecutorクラス
+マルチプロセスで非同期処理を行う場合、concurrent.futures.ProcessPoolExecutorクラスを利用する。<br>
+マルチプロセス処理は暗号化(復号)や次元数の大きい行列演算などのCPUバウンドな処理に有効である。例として、フィボナッチ数列を計算する関数を実装する。
+
+```python
+import sys
+
+def fibonacci(n):
+    a, b = 0, 1
+    for _ in range(n):
+        a, b = b, b + a
+    else:
+        return a
+
+def main():
+    n = int(sys.argv[1])
+    print(fibonacci(n))
+
+if __name__ == "__main__":
+    main()
+```
+
+fibonacci()関数は、引数nを受け取り、n + 1番目のフィボナッチ数列の値を返す関数である。ここでは、高負荷をかけるためにn = 1000000を指定する。
+
+## 逐次処理で実装
+上記を逐次処理で行う場合の時間を計測する。計算する回数はCPUのコア数に応じて調整する。get_sequential()関数を追加し、逐次処理でfibonacci()関数を呼び出す。
+
+```python
+import sys
+import os
+import time
+from functools import wraps
+
+def elapsed_time(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        start = time.perf_counter()
+        v = f(*args, **kwargs)
+        end = time.perf_counter()
+        print(end - start)
+        return v
+    return wrapper
+
+def fibonacci(n):
+    a, b = 0, 1
+    for _ in range(n):
+        a, b = b, b + a
+    else:
+        return a
+
+@elapsed_time
+def get_sequential(nums):
+    for num in nums:
+        print(fibonacci(num))
+
+def main():
+    n = int(sys.argv[1])
+    nums = [n] * os.cpu_count()
+    get_sequential(nums)
+
+if __name__ == "__main__":
+    main()
+```
+
+私の環境では関数os.cpu_count()が8を返すため8回計算が行われ、合計で約71秒かかった。
+
+## マルチプロセスで実装
+上記処理をマルチプロセスで並列化する。ProcessPoolExecutorクラスの使い方はThreadPoolExecutorクラスと同じである。
+
+```python
+import sys
+import os
+import time
+from functools import wraps
+from concurrent.futures import (ProcessPoolExecutor, as_completed)
+
+def elapsed_time(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        start = time.perf_counter()
+        v = f(*args, **kwargs)
+        end = time.perf_counter()
+        print(end - start)
+        return v
+    return wrapper
+
+def fibonacci(n):
+    a, b = 0, 1
+    for _ in range(n):
+        a, b = b, b + a
+    else:
+        return a
+
+@elapsed_time
+def get_multi_process(nums):
+    with ProcessPoolExecutor() as e:
+        futures = [e.submit(fibonacci, num) for num in nums]
+        for future in as_completed(futures):
+            print(future.result())
+
+def main():
+    n = int(sys.argv[1])
+    nums = [n] * os.cpu_count()
+    get_multi_process(nums)
+
+if __name__ == "__main__":
+    main()
+```
+
+pythonコマンドに渡すスクリプト、つまりメインモジュールでマルチプロセス処理を行う場合は、マルチプロセスの開始処理をif \_\_name__ == "\_\_main__":ブロックで保護する。これは、新たに起動されるPythonインタプリタがメインモジュールを安全にインポートできるようにするためである。<br>
+上記を実行すると計測時間は約20秒となり、逐次処理と比べて所要時間が短くなった。
