@@ -241,6 +241,32 @@ if __name__ == "__main__":
 pythonコマンドに渡すスクリプト、つまりメインモジュールでマルチプロセス処理を行う場合は、マルチプロセスの開始処理をif \_\_name__ == "\_\_main__":ブロックで保護する。これは、新たに起動されるPythonインタプリタがメインモジュールを安全にインポートできるようにするためである。<br>
 上記を実行すると計測時間は約20秒となり、逐次処理と比べて所要時間が短くなった。
 
+### マルチプロセスの注意点
+マルチプロセスでは、マルチスレッドとは異なる注意点がある。これらは主にプロセスの仕組みやプロセス間通信に起因する。<br>
+ProcessPoolExecutorクラスは、キューと呼ばれるデータ構造を利用してプロセス間でオブジェクトの受け渡しを行っている。ProcessPoolExecutorクラスが使うキューはmultiprocessing.Queueクラスで実現されており、このキューに追加されるオブジェクトはpickleと呼ばれる形式でシリアライズされている。つまり、ProcessPoolExecutorクラスを使ったマルチプロセス処理では、pickle化できるオブジェクトしか実行したり、返したりすることができない。pickle化できないオブジェクトの一例に、lambda式で定義したオブジェクトがある。
+また、マルチプロセスでは、乱数を扱う場合も注意が必要である。下記は、numpy.random.random()関数を使ってそれぞれのプロセス内で乱数を生成するコードである。
+
+```python
+from concurrent.futures import (ProcessPoolExecutor, as_completed)
+import numpy as np
+
+def use_numpy_random():
+    # 乱数生成器を初期化する場合はこの行を実行する
+    # np.random.seed()
+    return np.random.random()
+
+def main():
+    with ProcessPoolExecutor() as e:
+        futures = [e.submit(use_numpy_random) for _ in range(3)]
+        for future in as_completed(futures):
+            print(future.result())
+
+if __name__ == "__main__":
+    main()
+```
+
+実行すると、生成された3つの乱数は全て同じ値になってしまった。これはプロセスの開始方式がfork(親プロセスを複製して子プロセスを生成する方式)となっている場合に生じる現象で、Unix環境ではforkがデフォルト値となっている。この場合は各プロセスの中でnumpy.random.seed()関数を用いて、乱数生成器の初期化を行うと解決する。なお、標準ライブラリrandomモジュールのrandom.random()関数を使った場合は、プロセスのフォークの際に自動で乱数生成器が初期化されるのでこの心配はいらない。
+
 ## マルチスレッドで実装
 マルチスレッドにした場合の所要時間も確認してみる。ProcessPoolExecutorクラスをThreadPoolExecutorクラスに変更するだけで、マルチプロセスからマルチスレッドに変更できる。<br>
 実行すると所要時間は約138秒となった。これはGILの制約により、CPUバウンドな処理に対してはマルチスレッドによる高速処理ができないためである。逐次処理より遅くなったのは、スレッド切り替えによるオーバーヘッドのためである。
