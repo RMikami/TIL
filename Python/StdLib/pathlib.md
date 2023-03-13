@@ -28,3 +28,14 @@ osモジュールでも下記のように同様な処理を行うことができ
 >>> for i in p:
 >>>     print(i)
 ```
+
+# パスの連結
+Pathクラスに連結したいディレクトリの文字列を渡せば、'/'演算子を用いることで下記ようにパスを連結できる。
+
+```python
+image/aaa/bbb/ccc
+>>> from pathlib import Path
+>>> path = Path("./image")
+>>> print(path1 / Path("aaa/bbb/ccc"))
+image/aaa/bbb/ccc
+```
